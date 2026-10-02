@@ -1,5 +1,6 @@
 const zlib = require('zlib');
 
+// ---------- PNG ----------
 const T = new Uint32Array(256);
 for (let n = 0; n < 256; n++) {
   let c = n;
@@ -20,7 +21,7 @@ const chunk = (type, data) => {
   return Buffer.concat([len, td, c]);
 };
 
-// ---- police classique (traits + empattements) ----
+// ---------- Police classique (traits + empattements) ----------
 const ell = (cx, cy, rx, ry, n = 32) => {
   const p = [];
   for (let i = 0; i <= n; i++) {
@@ -47,9 +48,17 @@ const GAP = 2.6;
 
 module.exports = (req, res) => {
   const q = new URL(req.url, 'http://x').searchParams;
+
+  // iPhone 15 Pro : 1179 x 2556 pixels
   const W = Math.min(+q.get('w') || 1179, 2000);
   const H = Math.min(+q.get('h') || 2556, 3000);
   const k = W / 1179;
+
+  // réglages facultatifs : s = taille, dx = décalage horizontal, dy = décalage vertical
+  const S = +q.get('s') || 1;
+  const DX = (+q.get('dx') || 0) * k;
+  const DY = (+q.get('dy') || 0) * k;
+
   const stride = W + 1;
   const raw = Buffer.alloc(stride * H); // tout noir
 
@@ -94,28 +103,32 @@ module.exports = (req, res) => {
     }
   };
 
-  // ---- jours ----
+  // ---------- Jours ----------
   const DAY = 86400000;
   const START = Date.UTC(2026, 9, 2);  // 2 octobre 2026
   const END = Date.UTC(2027, 5, 10);   // 10 juin 2027
-  const total = Math.round((END - START) / DAY) + 1;
-  const now = new Date(Date.now() - 4 * 3600 * 1000); // heure Guadeloupe
+  const total = Math.round((END - START) / DAY) + 1; // 252 jours
+  const now = new Date(Date.now() - 4 * 3600 * 1000); // heure de Guadeloupe
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const done = Math.max(0, Math.min(total, Math.round((today - START) / DAY) + 1));
 
-  // ---- calendrier ----
-  const COLS = 14;
-  const pitch = Math.floor((W * 0.78) / COLS);
-  const r = pitch * 0.26;
-  const t = Math.max(2, pitch * 0.05);
-  const x0 = Math.round((W - COLS * pitch) / 2);
-  const gridTop = Math.round(H * 0.38);
+  // ---------- Calendrier : 21 colonnes x 12 lignes, petit et centré ----------
+  const COLS = 21;
   const rows = Math.ceil(total / COLS);
+  const pitch = 30 * k * S;
+  const r = pitch * 0.3;
+  const t = Math.max(1.6, pitch * 0.07);
+  const gw = COLS * pitch;
+  const gh = rows * pitch;
+  const cx0 = W / 2 + DX;
+  const cy0 = H * 0.56 + DY;      // centre du calendrier
+  const x0 = cx0 - gw / 2;
+  const y0 = cy0 - gh / 2;
 
   for (let i = 0; i < total; i++) {
     const filled = i < done;
     const cx = x0 + (i % COLS) * pitch + pitch / 2;
-    const cy = gridTop + Math.floor(i / COLS) * pitch + pitch / 2;
+    const cy = y0 + Math.floor(i / COLS) * pitch + pitch / 2;
     for (let y = Math.floor(cy - r - 1); y <= Math.ceil(cy + r + 1); y++) {
       for (let x = Math.floor(cx - r - 1); x <= Math.ceil(cx + r + 1); x++) {
         const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
@@ -127,15 +140,15 @@ module.exports = (req, res) => {
     }
   }
 
-  // ---- MP* au-dessus du calendrier ----
-  const s1 = 6.4 * k;
-  text('MP*', W / 2, gridTop - 60 * k - 10 * s1, s1, s1 * 0.8, 255);
+  // ---------- MP* au-dessus ----------
+  const s1 = 3 * k * S;
+  text('MP*', cx0, y0 - 40 * k * S - 10 * s1, s1, s1 * 0.75, 255);
 
-  // ---- date en dessous, opacité 50 % ----
-  const s2 = 3.4 * k;
-  text('10 JUIN 2027', W / 2, gridTop + rows * pitch + 50 * k, s2, s2 * 0.8, 128);
+  // ---------- Date en dessous, opacité 50 % ----------
+  const s2 = 2.2 * k * S;
+  text('10 JUIN 2027', cx0, y0 + gh + 40 * k * S, s2, s2 * 0.75, 128);
 
-  // ---- PNG ----
+  // ---------- PNG ----------
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(W, 0);
   ihdr.writeUInt32BE(H, 4);
